@@ -1,2 +1,3 @@
+include ':viewlibrary'
 include ':app'
 rootProject.name = "ScheduleMonthView"
