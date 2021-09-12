@@ -2,16 +2,18 @@ package com.abstractstatus.viewlibrary.view
 
 import android.animation.Animator
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.util.AttributeSet
-import android.util.Log
 import android.view.MotionEvent
 import android.view.View
-import com.abstractstatus.viewlibrary.entity.ScheduleEntity
-import com.abstractstatus.viewlibrary.util.LunarUtil
+import com.abstractstatus.viewlibrary.util.CalendarUtil
+import com.abstractstatus.viewlibrary.util.MonthViewDelegate
+
+import com.abstractstatus.viewlibrary.util.lunar.LunarCalendar
 
 /**
  ** Created by AbstractStatus at 2021/8/21 21:39.
@@ -22,14 +24,18 @@ class MonthItemView @JvmOverloads constructor(
     companion object{
         private const val TAG = "MonthItemView"
         private const val oneThird: Float = 1f / 3f
+        //打开动画的标识
         private const val FLAG_ANIMATOR_JUST_OPEN = 1
+        //关闭动画的标识
         private const val FLAG_ANIMATOR_JUST_CLOSE = 2
+        //关闭-打开的关闭动画标识
         private const val FLAG_ANIMATOR_UNJUST_CLOSE = 3
+        //关闭-打开的打开动画标识
         private const val FLAG_ANIMATOR_UNJUST_OPEN = 4
 
         //字符串压缩成5个字符
-        private fun getShortName(s: String): String {
-            var s = s
+        private fun getShortName(ss: String): String {
+            var s = ss
             if (s.length >= 5) {
                 s = s.substring(0, 4)
                 s += ".."
@@ -38,54 +44,70 @@ class MonthItemView @JvmOverloads constructor(
         }
     }
 
+    //视图的宽高
     private var mWidth: Float = 0f
     private var mHeight: Float = 0f
 
+    //每一格的宽高
     private var averageWidth: Float = 0f
     private var averageHeight: Float = 0f
 
+    //动画锁
     private var lockAnimator: Boolean = false
+
+    //打开的状态
     private var isOpen: Boolean = false
 
+    //触摸格子的x, y索引
     private var touchIndexX: Int = -1
     private var touchIndexY: Int = -1
 
+    //选中格子的x, y索引
     private var selectIndexX: Int = -1
     private var selectIndexY: Int = -1
 
+    //今日格子的x, y索引
     private var todayIndexX: Int = -1
     private var todayIndexY: Int = -1
 
+    //动画需要的格子x, y索引
     private var openUpIndexX: Int = -1
     private var openUpIndexY: Int = -1
 
-    //本月本年
+    //该月视图的月份和年份
     private var thisMonth: Int = 0
     private var thisYear: Int = 0
 
-    //0 ~ 41
+    //今日的坐标，0 ~ 41
     private var todayPosition:Int = -1
 
-    private var dates = Array(42){
-        arrayOf(2021, 9, 4, 4, 5)
+    //该月视图的日期数组
+    private var dates = CalendarUtil.get42DaysDataByCurMonth()
+
+    //月份坐标
+    var monthPosition: Int = MonthViewDelegate.startMonthPos
+        set(value){
+            field = value
+            dates = CalendarUtil.get42DaysDataByMonthPosition(value)
+            val nowYearAndMonth = CalendarUtil.getNowYearAndMonth()
+            val yearAndMonth = CalendarUtil.getAddYearAndMonth(nowYearAndMonth[0], nowYearAndMonth[1], monthPosition - MonthViewDelegate.startMonthPos)
+            thisYear = yearAndMonth[0]
+            thisMonth = yearAndMonth[1]
+            todayPosition = CalendarUtil.getTodayPosition(dates)
+            todayIndexX = todayPosition % MonthViewDelegate.daysAWeek
+            todayIndexY = todayPosition / MonthViewDelegate.daysAWeek
+            invalidate()
+        }
+
+    private var nameLists = ArrayList<ArrayList<String>>().apply {
+        repeat(42){
+            add(ArrayList())
+        }
     }
 
-    private var scheduleNames: Array<String> = Array(42){
-        "你好啊啊啊啊"
-    }
-
-    private var scheduleLists = ArrayList<ArrayList<ScheduleEntity>>().apply {
-        for(i in 0..41){
-            val list = ArrayList<ScheduleEntity>()
-            repeat(5){
-                list.add(ScheduleEntity(
-                    "哈哈啊哈哈哈哈",
-                    1,
-                    "哈哈啊哈哈哈哈",
-                    "哈哈啊哈哈哈哈",
-                    "哈哈啊哈哈哈哈",
-                    2))
-            }
+    private var statusLists = ArrayList<ArrayList<Boolean>>().apply {
+        repeat(42){
+            add(ArrayList())
         }
     }
 
@@ -110,12 +132,14 @@ class MonthItemView @JvmOverloads constructor(
             override fun onAnimationEnd(animation: Animator?) {
                 lockAnimator = false
                 isOpen = true
+                onJustOpenEnd?.let { it() }
             }
 
             override fun onAnimationCancel(animation: Animator?) {
             }
 
             override fun onAnimationStart(animation: Animator?) {
+                onJustOpenStart?.let { it() }
             }
         })
     }
@@ -132,12 +156,14 @@ class MonthItemView @JvmOverloads constructor(
             override fun onAnimationEnd(animation: Animator?) {
                 lockAnimator = false
                 isOpen = false
+                onJustCloseEnd?.let { it() }
             }
 
             override fun onAnimationCancel(animation: Animator?) {
             }
 
             override fun onAnimationStart(animation: Animator?) {
+                onJustCloseStart?.let { it() }
             }
         })
     }
@@ -154,6 +180,7 @@ class MonthItemView @JvmOverloads constructor(
             override fun onAnimationEnd(animation: Animator?) {
                 openUpIndexX = selectIndexX
                 openUpIndexY = selectIndexY
+                onUnjustCloseEnd?.let { it() }
                 startAnimator(FLAG_ANIMATOR_UNJUST_OPEN)
             }
 
@@ -161,6 +188,7 @@ class MonthItemView @JvmOverloads constructor(
             }
 
             override fun onAnimationStart(animation: Animator?) {
+                onUnjustCloseStart?.let { it() }
             }
         })
     }
@@ -176,12 +204,14 @@ class MonthItemView @JvmOverloads constructor(
 
             override fun onAnimationEnd(animation: Animator?) {
                 lockAnimator = false
+                onUnjustOpenEnd?.let { it() }
             }
 
             override fun onAnimationCancel(animation: Animator?) {
             }
 
             override fun onAnimationStart(animation: Animator?) {
+                onUnjustOpenStart?.let { it() }
             }
         })
     }
@@ -202,13 +232,13 @@ class MonthItemView @JvmOverloads constructor(
     }
 
     //本月的每日日程文本背景
-    private val thisMonthCellScheduleBgPaint = Paint().apply {
+    private val thisMonthCellNameBgPaint = Paint().apply {
         color = 0xEAF9F1
         alpha = 0xFF
     }
 
     //本月每日日程文本
-    private val thisMonthCellScheduleTextPaint = Paint().apply {
+    private val thisMonthCellNameTextPaint = Paint().apply {
         color = 0x1C8E4F
         alpha = 0xFF
         textAlign = Paint.Align.CENTER
@@ -219,20 +249,6 @@ class MonthItemView @JvmOverloads constructor(
     private val otherMonthCellDayTextPaint = Paint().apply {
         color = 0xC6C9CC
         alpha = 0xFF
-        textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT_BOLD
-    }
-
-    //其他月的每日日程文本背景
-    private val otherMonthCellScheduleBgPaint = Paint().apply {
-        color = 0xCCFFFF
-        alpha = 0x77
-    }
-
-    //其他月的每日日程文本
-    private val otherMonthCellScheduleTextPaint = Paint().apply {
-        color = 0x009966
-        alpha = 0x77
         textAlign = Paint.Align.CENTER
         typeface = Typeface.DEFAULT_BOLD
     }
@@ -261,14 +277,14 @@ class MonthItemView @JvmOverloads constructor(
     }
 
     //选中的日期文本背景
-    private val selectDayCellTextBgPaint = Paint().apply {
+    private val selectCellTextBgPaint = Paint().apply {
         style = Paint.Style.FILL
         color = 0x196EFF
         alpha = 0xFF
     }
 
     //选中的日期文本
-    private val selectDayCellTextPaint = Paint().apply {
+    private val selectCellTextPaint = Paint().apply {
         color = 0xFFFFFF
         alpha = 0xFF
         textAlign = Paint.Align.CENTER
@@ -276,7 +292,7 @@ class MonthItemView @JvmOverloads constructor(
     }
 
     //选中的格子背景
-    private val selectMonthCellBgPaint = Paint().apply {
+    private val selectCellBgPaint = Paint().apply {
         style = Paint.Style.FILL
         color = 0xF7F8FA
         alpha = 0xFF
@@ -299,7 +315,7 @@ class MonthItemView @JvmOverloads constructor(
     }
 
     //选中的农历文字
-    private val selectMonthLunarTextPaint = Paint().apply {
+    private val selectLunarTextPaint = Paint().apply {
         color = 0xFFFFFF
         alpha = 0xFF
         textAlign = Paint.Align.CENTER
@@ -307,7 +323,7 @@ class MonthItemView @JvmOverloads constructor(
     }
 
     //今日的农历文字
-    private val todayMonthLunarTextPaint = Paint().apply {
+    private val todayLunarTextPaint = Paint().apply {
         color = 0x196EFF
         alpha = 0xFF
         textAlign = Paint.Align.CENTER
@@ -326,22 +342,22 @@ class MonthItemView @JvmOverloads constructor(
     }
 
     //取消日程的线
-    private val scheduleCancelLinePaint = Paint().apply {
+    private val nameCancelLinePaint = Paint().apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f
         color = 0x000000
         alpha = 0xFF
     }
 
-    //其他月的每日日程文本背景
-    private val beforeDayCellScheduleBgPaint = Paint().apply {
+    //过去的每日日程文本背景
+    private val beforeDayCellNameBgPaint = Paint().apply {
         style = Paint.Style.FILL
         color = 0xEAF9F1
         alpha = 0x7F
     }
 
-    //其他月的每日日程文本
-    private val beforeDayCellScheduleTextPaint = Paint().apply {
+    //过去的每日日程文本
+    private val beforeDayCellNameTextPaint = Paint().apply {
         color = 0x1C8E4F
         alpha = 0x7F
         textAlign = Paint.Align.CENTER
@@ -349,20 +365,16 @@ class MonthItemView @JvmOverloads constructor(
     }
 
     //还有n项的文本颜色
-    private val remainingNScheduleTextPaint = Paint().apply {
+    private val remainingNNameTextPaint = Paint().apply {
         color = 0xA5A8AD
         alpha = 0xFF
         textAlign = Paint.Align.CENTER
         typeface = Typeface.DEFAULT_BOLD
     }
 
-
     //textSize和distance（字体底部基线到字体正中心的垂直距离）的关系为 100 : 39.257813
     //现在假设textSize为100时，字的大小为80 = 40 * 2，反求出的textSize偏小
     private val radioTextSize = 1.25f
-
-    //单个日程字数
-    private val numSingleScheduleWord = 0
 
     //日期字大小  用于setTextSize()
     private var sizeDailyNumText = 0f
@@ -406,7 +418,7 @@ class MonthItemView @JvmOverloads constructor(
 
 
     init {
-        LunarUtil.init(context)
+        LunarCalendar.init(context)
     }
 
 
@@ -446,11 +458,11 @@ class MonthItemView @JvmOverloads constructor(
         sizeDailyNumText = rawSizeDailyNumText * radioTextSize
 
         //日程文字大小
-        rawSizeScheduleText = Math.min(rawSizeDailyNumText, averageWidth / 6)
+        rawSizeScheduleText = rawSizeDailyNumText.coerceAtMost(averageWidth / 6)
         sizeScheduleText = rawSizeScheduleText * radioTextSize
 
         //农历文字大小
-        rawSizeLunarText = Math.min(averageWidth / 5, rawSizeDailyNumText * 2 / 3)
+        rawSizeLunarText = (averageWidth / 5).coerceAtMost(rawSizeDailyNumText * 2 / 3)
         sizeLunarText = rawSizeLunarText * radioTextSize
 
         //日期（农历加公历）选中时候的圆形半径
@@ -464,18 +476,17 @@ class MonthItemView @JvmOverloads constructor(
         heightFourTimesSpaceScheduleItemRect = 4 * heightSpaceScheduleItemRect
 
         thisMonthCellDayTextPaint.textSize = sizeDailyNumText
-        thisMonthCellScheduleTextPaint.textSize = sizeScheduleText
-        selectDayCellTextPaint.textSize = sizeDailyNumText
-        todayCellTextPaint.textSize = sizeDailyNumText
         otherMonthCellDayTextPaint.textSize = sizeDailyNumText
-        otherMonthCellScheduleTextPaint.textSize = sizeScheduleText
-        monthWaterMarkPaint.textSize = sizeWaterMarkText * 2
+        selectCellTextPaint.textSize = sizeDailyNumText
+        todayCellTextPaint.textSize = sizeDailyNumText
         thisMonthLunarTextPaint.textSize = sizeLunarText
         otherMonthLunarTextPaint.textSize = sizeLunarText
-        todayMonthLunarTextPaint.textSize = sizeLunarText
-        selectMonthLunarTextPaint.textSize = sizeLunarText
-        beforeDayCellScheduleTextPaint.textSize = sizeScheduleText
-        remainingNScheduleTextPaint.textSize = sizeScheduleText
+        todayLunarTextPaint.textSize = sizeLunarText
+        selectLunarTextPaint.textSize = sizeLunarText
+        beforeDayCellNameTextPaint.textSize = sizeScheduleText
+        thisMonthCellNameTextPaint.textSize = sizeScheduleText
+        remainingNNameTextPaint.textSize = sizeScheduleText
+        monthWaterMarkPaint.textSize = sizeWaterMarkText
 
         //日期字体的矩阵数据和中心到基线的距离
         val fontMetricsDailyNum: Paint.FontMetrics = thisMonthCellDayTextPaint.fontMetrics
@@ -486,7 +497,7 @@ class MonthItemView @JvmOverloads constructor(
         distanceLunarText = (fontMetricsLunarText.bottom - fontMetricsLunarText.top) / 2 - fontMetricsLunarText.bottom
 
         //日程字体的矩阵数据和中心到基线的距离
-        val fontMetricsSchedule: Paint.FontMetrics = thisMonthCellScheduleTextPaint.fontMetrics
+        val fontMetricsSchedule: Paint.FontMetrics = thisMonthCellNameTextPaint.fontMetrics
         distanceSchedule = (fontMetricsSchedule.bottom - fontMetricsSchedule.top) / 2 - fontMetricsSchedule.bottom
 
         //水印字体的矩阵数据和中心到基线的距离
@@ -509,73 +520,76 @@ class MonthItemView @JvmOverloads constructor(
             //绘制月份水印
             drawWaterMark(this)
             //绘制每格的日期文本
-
-            //绘制每格的日期文本
             drawCellDateText(this)
-            //绘制每格的日程文本
             //绘制每格的日程文本
             drawCellScheduleText(this)
             //绘制今日的格子
-            //绘制今日的格子
-            if (!(todayIndexX == openUpIndexX && todayIndexY == openUpIndexY && isOpen)) {
-                drawTodayItem(this)
-            }
-            //绘制选中的格子
+            drawTodayItem(this)
             //绘制选中的格子
             drawSelectItem(this)
         }
     }
 
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent?): Boolean {
-        when (event!!.action) {
-            MotionEvent.ACTION_DOWN -> {
-                touchIndexX = (event.x / averageWidth).toInt()
-                touchIndexY = (event.y / averageHeight).toInt()
-                if (isOpen) {
-                    //不在打开后的日期区域，不响应触摸事件
-                    if (!(selectIndexY == 5 && touchIndexY == 0
-                                    || selectIndexY != 5 && (touchIndexY == 0 || touchIndexY == 5))) {
-                        return false
+        event?.let {
+            when (it.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    touchIndexX = (it.x / averageWidth).toInt()
+                    touchIndexY = (it.y / averageHeight).toInt()
+                    if (isOpen) {
+                        //不在打开后的日期区域，不响应触摸事件
+                        if (!(selectIndexY == 5 && touchIndexY == 0
+                                        || selectIndexY != 5 && (touchIndexY == 0 || touchIndexY == 5))) {
+                            return false
+                        }
                     }
-                }
-                return true
-            }
-            MotionEvent.ACTION_UP -> {
-                if (lockAnimator) {
                     return true
                 }
-                if (isClick(event.x, event.y)) {
-                    touchIndexX = (event.x / averageWidth).toInt()
-                    touchIndexY = (event.y / averageHeight).toInt()
-                    if (!isOpen) {
-                        selectIndexX = touchIndexX
-                        selectIndexY = touchIndexY
-                        openUpIndexX = selectIndexX
-                        openUpIndexY = selectIndexY
-                        startAnimator(FLAG_ANIMATOR_JUST_OPEN)
-                    } else {
-                        //打开后点击的不是第一行
-                        when {
-                            touchIndexY != 0 -> {
-                                openUpIndexX = selectIndexX
-                                openUpIndexY = selectIndexY
-                                selectIndexX = touchIndexX
-                                selectIndexY += 1
-                                startAnimator(FLAG_ANIMATOR_UNJUST_CLOSE)
-                            }
-                            touchIndexX != selectIndexX -> {
-                                selectIndexX = touchIndexX
-                                openUpIndexX = selectIndexX
-                                openUpIndexY = selectIndexY
-                            }
-                            else -> {
-                                startAnimator(FLAG_ANIMATOR_JUST_CLOSE)
+                MotionEvent.ACTION_UP -> {
+                    if (lockAnimator) {
+                        return true
+                    }
+                    if (isClick(it.x, it.y)) {
+                        touchIndexX = (it.x / averageWidth).toInt()
+                        touchIndexY = (it.y / averageHeight).toInt()
+                        if (!isOpen) {
+                            selectIndexX = touchIndexX
+                            selectIndexY = touchIndexY
+                            openUpIndexX = selectIndexX
+                            openUpIndexY = selectIndexY
+                            startAnimator(FLAG_ANIMATOR_JUST_OPEN)
+                        } else {
+                            when {
+                                //打开后点击的不是第一行
+                                touchIndexY != 0 -> {
+                                    openUpIndexX = selectIndexX
+                                    openUpIndexY = selectIndexY
+                                    selectIndexX = touchIndexX
+                                    selectIndexY += 1
+                                    startAnimator(FLAG_ANIMATOR_UNJUST_CLOSE)
+                                }
+                                //点击第一行但不同列
+                                touchIndexX != selectIndexX -> {
+                                    selectIndexX = touchIndexX
+                                    openUpIndexX = selectIndexX
+                                    openUpIndexY = selectIndexY
+                                    invalidate()
+                                }
+                                //点击选中的格子
+                                else -> {
+                                    startAnimator(FLAG_ANIMATOR_JUST_CLOSE)
+                                }
                             }
                         }
                     }
+                    onDaySelect?.let { it1 -> it1(dates[selectIndexX + selectIndexY * 7], selectIndexX + selectIndexY * 7) }
+                    return true
                 }
-                return true
+                else -> {
+
+                }
             }
         }
 
@@ -611,12 +625,22 @@ class MonthItemView @JvmOverloads constructor(
     }
 
     private fun drawWaterMark(canvas: Canvas?){
+        canvas?.drawText(
+                thisYear.toString(),
+                mWidth / 2,
+                averageHeight * (1.5f + 3) + distanceWaterMark,
+                monthWaterMarkPaint)
 
+        canvas?.drawText(
+                if (thisMonth < 10) "0$thisMonth" else thisMonth.toString(),
+                mWidth / 2,
+                averageHeight * (1.5f) + distanceWaterMark,
+                monthWaterMarkPaint)
     }
 
 
     private fun drawTodayItem(canvas: Canvas) {
-        if (todayPosition < 0) {
+        if(todayPosition == -1){
             return
         }
         if (openUpIndexY >= todayIndexY) {
@@ -633,14 +657,14 @@ class MonthItemView @JvmOverloads constructor(
                 todayCellTextPaint
             )
             canvas.drawText(
-                LunarUtil.getLunarText(
-                    dates[todayPosition].get(0),
-                    dates[todayPosition].get(1),
-                    dates[todayPosition].get(2)
+                LunarCalendar.getLunarText(
+                        dates[todayPosition][0],
+                        dates[todayPosition][1],
+                        dates[todayPosition][2]
                 ),
                 (averageWidth * (0.5 + todayIndexX)).toFloat(),
                 averageHeight * todayIndexY + distanceDailyNum * 3.5f + 2.5f * distanceLunarText + upIncrement,
-                todayMonthLunarTextPaint
+                todayLunarTextPaint
             )
         } else {
             canvas.drawCircle(
@@ -656,97 +680,96 @@ class MonthItemView @JvmOverloads constructor(
                 todayCellTextPaint
             )
             canvas.drawText(
-                LunarUtil.getLunarText(
-                    dates[todayPosition].get(0),
-                    dates[todayPosition].get(1),
-                    dates[todayPosition].get(2)
+                    LunarCalendar.getLunarText(
+                        dates[todayPosition][0],
+                        dates[todayPosition][1],
+                        dates[todayPosition][2]
                 ),
                 (averageWidth * (0.5 + todayIndexX)).toFloat(),
                 averageHeight * todayIndexY + distanceDailyNum * 3.5f + 2.5f * distanceLunarText + downIncrement,
-                todayMonthLunarTextPaint
+                todayLunarTextPaint
             )
         }
     }
 
 
     private fun drawSelectItem(canvas: Canvas) {
-        if (!(dates.isNotEmpty() && openUpIndexX >= 0 && openUpIndexY >= 0 && isOpen)) {
+        if (!isOpen) {
             return
         }
-        val selectPosition = openUpIndexX + openUpIndexY * 7
+        val selectPosition = selectIndexX + openUpIndexY * 7
         canvas.drawRect(
-            averageWidth * openUpIndexX,
+            averageWidth * selectIndexX,
             averageHeight * (openUpIndexY + oneThird) + upIncrement + 30,
-            averageWidth * (openUpIndexX + 1),
+            averageWidth * (selectIndexX + 1),
             averageHeight * (openUpIndexY + 1) + upIncrement,
-            selectMonthCellBgPaint
+            selectCellBgPaint
         )
 
         //画箭头
         canvas.drawLine(
-            averageWidth * (openUpIndexX + 0.35f),
+            averageWidth * (selectIndexX + 0.35f),
             averageHeight * (openUpIndexY + 0.72f) + upIncrement,
-            averageWidth * (openUpIndexX + 0.5f),
+            averageWidth * (selectIndexX + 0.5f),
             averageHeight * (openUpIndexY + 0.65f) + upIncrement,
             arrowPaint
         )
         canvas.drawLine(
-            averageWidth * (openUpIndexX + 0.5f),
+            averageWidth * (selectIndexX + 0.5f),
             averageHeight * (openUpIndexY + 0.65f) + upIncrement,
-            averageWidth * (openUpIndexX + 0.65f),
+            averageWidth * (selectIndexX + 0.65f),
             averageHeight * (openUpIndexY + 0.72f) + upIncrement,
             arrowPaint
         )
 
         canvas.drawCircle(
-            (0.5f + openUpIndexX) * averageWidth,
+            (0.5f + selectIndexX) * averageWidth,
             averageHeight * openUpIndexY + upIncrement + radiusDailyText,
             radiusDailyText,
-            selectDayCellTextBgPaint
+            selectCellTextBgPaint
         )
         canvas.drawText(
-            if (openUpIndexX == todayIndexX && openUpIndexY == todayIndexY) "今" else dates[selectIndexX + openUpIndexY * 7][2].toString(),
-            averageWidth * (0.5f + openUpIndexX),
+            if (selectIndexX == todayIndexX && openUpIndexY == todayIndexY) "今" else dates[selectIndexX + openUpIndexY * 7][2].toString(),
+            averageWidth * (0.5f + selectIndexX),
             averageHeight * openUpIndexY + distanceDailyNum * 2.5f + upIncrement,
-            selectDayCellTextPaint
+            selectCellTextPaint
         )
         canvas.drawText(
-            LunarUtil.getLunarText(
-                dates[selectPosition].get(0),
-                dates[selectPosition].get(1),
-                dates[selectPosition].get(2)
+                LunarCalendar.getLunarText(
+                    dates[selectPosition][0],
+                    dates[selectPosition][1],
+                    dates[selectPosition][2]
             ),
-            (averageWidth * (0.5 + openUpIndexX)).toFloat(),
+            (averageWidth * (0.5 + selectIndexX)).toFloat(),
             averageHeight * openUpIndexY + distanceDailyNum * 3.5f + 2.5f * distanceLunarText + upIncrement,
-            selectMonthLunarTextPaint
+            selectLunarTextPaint
         )
     }
 
 
     private fun drawScheduleRect(
-        canvas: Canvas,
-        left: Float,
-        top: Float,
-        right: Float,
-        bottom: Float,
-        paint: Paint,
-        scheduleEntities: List<ScheduleEntity>?
+            canvas: Canvas,
+            left: Float,
+            top: Float,
+            right: Float,
+            bottom: Float,
+            paint: Paint,
+            nameList: List<String>,
+            statusList: List<Boolean>
     ) {
-        if (scheduleEntities == null) {
-            return
-        }
-        when (scheduleEntities.size) {
+        when (nameList.size) {
             0 -> {
+
             }
             1 -> {
                 canvas.drawRect(left, top, right, bottom, paint)
-                if (scheduleEntities[0].scheduleStatus == 2) {
+                if (statusList[0]) {
                     canvas.drawLine(
                         left,
                         top + (bottom - top) / 2,
                         right,
                         top + (bottom - top) / 2,
-                        scheduleCancelLinePaint
+                        nameCancelLinePaint
                     )
                 }
             }
@@ -759,22 +782,22 @@ class MonthItemView @JvmOverloads constructor(
                     bottom + heightScheduleItemRect + heightDoubleSpaceScheduleItemRect,
                     paint
                 )
-                if (scheduleEntities[0].scheduleStatus == 2) {
+                if (statusList[0]) {
                     canvas.drawLine(
                         left,
                         top + (bottom - top) / 2,
                         right,
                         top + (bottom - top) / 2,
-                        scheduleCancelLinePaint
+                        nameCancelLinePaint
                     )
                 }
-                if (scheduleEntities[1].scheduleStatus == 2) {
+                if (statusList[1]) {
                     canvas.drawLine(
                         left,
                         top + (bottom - top) / 2 + heightScheduleItemRect + heightDoubleSpaceScheduleItemRect,
                         right,
                         top + (bottom - top) / 2 + heightScheduleItemRect + heightDoubleSpaceScheduleItemRect,
-                        scheduleCancelLinePaint
+                        nameCancelLinePaint
                     )
                 }
             }
@@ -786,39 +809,40 @@ class MonthItemView @JvmOverloads constructor(
         canvas: Canvas,
         x: Float,
         y: Float,
-        scheduleEntities: List<ScheduleEntity>,
+        scheduleEntities: List<String>,
         paint: Paint,
         remainingNPaint: Paint
     ) {
         when (scheduleEntities.size) {
             0 -> {
+
             }
             1 -> canvas.drawText(
                 getShortName(
-                    scheduleEntities[0].scheduleName
+                    scheduleEntities[0]
                 ), x, y, paint
             )
             2 -> {
                 canvas.drawText(
                     getShortName(
-                        scheduleEntities[0].scheduleName
+                        scheduleEntities[0]
                     ), x, y, paint
                 )
                 canvas.drawText(
                     getShortName(
-                        scheduleEntities[1].scheduleName
+                        scheduleEntities[1]
                     ), x, y + heightScheduleItemRect + heightDoubleSpaceScheduleItemRect, paint
                 )
             }
             else -> {
                 canvas.drawText(
                     getShortName(
-                        scheduleEntities[0].scheduleName
+                        scheduleEntities[0]
                     ), x, y, paint
                 )
                 canvas.drawText(
                     getShortName(
-                        scheduleEntities[1].scheduleName
+                        scheduleEntities[1]
                     ), x, y + heightScheduleItemRect + heightDoubleSpaceScheduleItemRect, paint
                 )
                 canvas.drawText(
@@ -832,25 +856,21 @@ class MonthItemView @JvmOverloads constructor(
     }
 
     private fun drawCellDateText(canvas: Canvas) {
-        if (dates == null || dates.isEmpty()) {
-            return
-        }
-
         //上半部分
         for (i in 0..openUpIndexY) {
             for (j in 0..6) {
                 if (i == todayIndexY && j == todayIndexX) {
                     continue
                 }
-                if (dates[i * 7 + j].get(4) == 1) {
+                if (dates[i * 7 + j][4] == 1) {
                     canvas.drawText(
-                        dates[i * 7 + j].get(2).toString(),
+                        dates[i * 7 + j][2].toString(),
                         (averageWidth * (0.5 + j)).toFloat(),
                         averageHeight * i + distanceDailyNum * 2.5f + upIncrement,
                         thisMonthCellDayTextPaint
                     )
                     canvas.drawText(
-                        LunarUtil.getLunarText(
+                            LunarCalendar.getLunarText(
                             dates[i * 7 + j][0],
                             dates[i * 7 + j][1],
                             dates[i * 7 + j][2]
@@ -867,7 +887,7 @@ class MonthItemView @JvmOverloads constructor(
                         otherMonthCellDayTextPaint
                     )
                     canvas.drawText(
-                        LunarUtil.getLunarText(
+                            LunarCalendar.getLunarText(
                             dates[i * 7 + j][0],
                             dates[i * 7 + j][1],
                             dates[i * 7 + j][2]
@@ -888,16 +908,16 @@ class MonthItemView @JvmOverloads constructor(
                 }
                 if (dates[i * 7 + j][4] == 1) {
                     canvas.drawText(
-                        dates[i * 7 + j].get(2).toString(),
+                        dates[i * 7 + j][2].toString(),
                         (averageWidth * (0.5 + j)).toFloat(),
                         averageHeight * i + distanceDailyNum * 2.5f + downIncrement,
                         thisMonthCellDayTextPaint
                     )
                     canvas.drawText(
-                        LunarUtil.getLunarText(
-                            dates[i * 7 + j].get(0),
-                            dates[i * 7 + j].get(1),
-                            dates[i * 7 + j].get(2)
+                            LunarCalendar.getLunarText(
+                                dates[i * 7 + j][0],
+                                dates[i * 7 + j][1],
+                                dates[i * 7 + j][2]
                         ),
                         (averageWidth * (0.5 + j)).toFloat(),
                         averageHeight * i + distanceDailyNum * 3.5f + 2.5f * distanceLunarText + downIncrement,
@@ -905,13 +925,13 @@ class MonthItemView @JvmOverloads constructor(
                     )
                 } else {
                     canvas.drawText(
-                        dates[i * 7 + j].get(2).toString(),
+                        dates[i * 7 + j][2].toString(),
                         (averageWidth * (0.5 + j)).toFloat(),
                         averageHeight * i + distanceDailyNum * 2.5f + downIncrement,
                         otherMonthCellDayTextPaint
                     )
                     canvas.drawText(
-                        LunarUtil.getLunarText(
+                            LunarCalendar.getLunarText(
                             dates[i * 7 + j][0],
                             dates[i * 7 + j][1],
                             dates[i * 7 + j][2]
@@ -928,15 +948,10 @@ class MonthItemView @JvmOverloads constructor(
 
     //画每个格子的日程
     private fun drawCellScheduleText(canvas: Canvas) {
-        if (scheduleLists == null || scheduleLists.size == 0 || dates == null || dates.size == 0
-        ) {
-            return
-        }
-
         //上半部分
         for (i in 0..openUpIndexY) {
             for (j in 0..6) {
-                if (i == openUpIndexY && j == openUpIndexX && isOpen) {
+                if (i == selectIndexY && j == selectIndexX && isOpen) {
                     continue
                 }
                 if (i * 7 + j >= todayPosition) {
@@ -946,16 +961,17 @@ class MonthItemView @JvmOverloads constructor(
                         (i + oneThird) * averageHeight + heightSpaceScheduleItemRect + upIncrement,
                         (j + 1) * averageWidth,
                         (i.toFloat() + oneThird) * averageHeight + heightSpaceScheduleItemRect + heightScheduleItemRect + upIncrement,
-                        thisMonthCellScheduleBgPaint,
-                        scheduleLists.get(i * 7 + j)
+                        thisMonthCellNameBgPaint,
+                            nameLists[i * 7 + j],
+                            statusLists[i * 7 + j]
                     )
                     drawScheduleText(
                         canvas,
                         (averageWidth * (0.5 + j)).toFloat(),
                         averageHeight * (i + oneThird) + heightSpaceScheduleItemRect + heightScheduleItemRect / 2 + distanceSchedule + upIncrement,
-                        scheduleLists.get(i * 7 + j),
-                        thisMonthCellScheduleTextPaint,
-                        remainingNScheduleTextPaint
+                            nameLists[i * 7 + j],
+                        thisMonthCellNameTextPaint,
+                        remainingNNameTextPaint
                     )
                 } else {
                     drawScheduleRect(
@@ -964,16 +980,17 @@ class MonthItemView @JvmOverloads constructor(
                         (i + oneThird) * averageHeight + heightSpaceScheduleItemRect + upIncrement,
                         (j + 1) * averageWidth,
                         (i.toFloat() + oneThird) * averageHeight + heightSpaceScheduleItemRect + heightScheduleItemRect + upIncrement,
-                        beforeDayCellScheduleBgPaint,
-                        scheduleLists.get(i * 7 + j)
+                        beforeDayCellNameBgPaint,
+                            nameLists[i * 7 + j],
+                            statusLists[i * 7 + j]
                     )
                     drawScheduleText(
                         canvas,
                         (averageWidth * (0.5 + j)).toFloat(),
                         averageHeight * (i + oneThird) + heightSpaceScheduleItemRect + heightScheduleItemRect / 2 + distanceSchedule + upIncrement,
-                        scheduleLists.get(i * 7 + j),
-                        beforeDayCellScheduleTextPaint,
-                        remainingNScheduleTextPaint
+                            nameLists[i * 7 + j],
+                        beforeDayCellNameTextPaint,
+                        remainingNNameTextPaint
                     )
                 }
             }
@@ -989,16 +1006,17 @@ class MonthItemView @JvmOverloads constructor(
                         (i + oneThird) * averageHeight + heightSpaceScheduleItemRect + downIncrement,
                         (j + 1) * averageWidth,
                         (i.toFloat() + oneThird) * averageHeight + heightSpaceScheduleItemRect + heightScheduleItemRect + downIncrement,
-                        thisMonthCellScheduleBgPaint,
-                        scheduleLists.get(i * 7 + j)
+                        thisMonthCellNameBgPaint,
+                            nameLists[i * 7 + j],
+                            statusLists[i * 7 + j]
                     )
                     drawScheduleText(
                         canvas,
                         (averageWidth * (0.5 + j)).toFloat(),
                         averageHeight * (i + oneThird) + heightSpaceScheduleItemRect + heightScheduleItemRect / 2 + distanceSchedule + downIncrement,
-                        scheduleLists.get(i * 7 + j),
-                        thisMonthCellScheduleTextPaint,
-                        remainingNScheduleTextPaint
+                            nameLists[i * 7 + j],
+                        thisMonthCellNameTextPaint,
+                        remainingNNameTextPaint
                     )
                 } else {
                     drawScheduleRect(
@@ -1007,16 +1025,17 @@ class MonthItemView @JvmOverloads constructor(
                         (i + oneThird) * averageHeight + heightSpaceScheduleItemRect + downIncrement,
                         (j + 1) * averageWidth,
                         (i.toFloat() + oneThird) * averageHeight + heightSpaceScheduleItemRect + heightScheduleItemRect + downIncrement,
-                        beforeDayCellScheduleBgPaint,
-                        scheduleLists.get(i * 7 + j)
+                        beforeDayCellNameBgPaint,
+                            nameLists[i * 7 + j],
+                            statusLists[i * 7 + j]
                     )
                     drawScheduleText(
                         canvas,
                         (averageWidth * (0.5 + j)).toFloat(),
                         averageHeight * (i + oneThird) + heightSpaceScheduleItemRect + heightScheduleItemRect / 2 + distanceSchedule + downIncrement,
-                        scheduleLists.get(i * 7 + j),
-                        beforeDayCellScheduleTextPaint,
-                        remainingNScheduleTextPaint
+                            nameLists[i * 7 + j],
+                        beforeDayCellNameTextPaint,
+                        remainingNNameTextPaint
                     )
                 }
             }
@@ -1038,6 +1057,27 @@ class MonthItemView @JvmOverloads constructor(
     private fun isClick(x: Float, y: Float): Boolean{
         return ((x / averageWidth).toInt() == touchIndexX
                 && (y / averageHeight).toInt() == touchIndexY)
+    }
+
+
+    /**
+     * 对外公开接口
+     */
+    var onJustOpenStart : (() -> Unit)? = null
+    var onJustOpenEnd : (() -> Unit)? = null
+    var onJustCloseStart : (() -> Unit)? = null
+    var onJustCloseEnd : (() -> Unit)? = null
+    var onUnjustOpenStart : (() -> Unit)? = null
+    var onUnjustOpenEnd : (() -> Unit)? = null
+    var onUnjustCloseStart : (() -> Unit)? = null
+    var onUnjustCloseEnd : (() -> Unit)? = null
+    var onDaySelect : ((date: IntArray, posOfMonth: Int) -> Unit)? = null
+
+    //设置名称和状态列表
+    fun setNameAndStatusList(name: ArrayList<ArrayList<String>>, status: ArrayList<ArrayList<Boolean>>){
+        nameLists = name
+        statusLists = status
+        invalidate()
     }
 
 }

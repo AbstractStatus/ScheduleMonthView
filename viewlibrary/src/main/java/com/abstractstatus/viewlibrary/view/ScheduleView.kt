@@ -19,7 +19,7 @@ import com.abstractstatus.viewlibrary.entity.ScheduleEntity
 /**
  ** Created by AbstractStatus at 2021/8/22 10:08.
  */
-class ScheduleListView @JvmOverloads constructor(
+class ScheduleView @JvmOverloads constructor(
         context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
@@ -33,7 +33,7 @@ class ScheduleListView @JvmOverloads constructor(
 
     init {
         LayoutInflater.from(context).inflate(
-                R.layout.month_schedule_list,
+                R.layout.month_schedule_view,
                 this
         )
         schedule_none = findViewById(R.id.schedule_none)
@@ -76,14 +76,16 @@ class ScheduleListView @JvmOverloads constructor(
     }
 
 
-    fun setNoneView() {
+    private fun setNoneView() {
         schedule_none?.visibility = View.VISIBLE
         schedule_list?.visibility = View.GONE
     }
 
 
-    fun setListView() {
+    private fun setListView() {
         schedule_none?.visibility = View.GONE
         schedule_list?.visibility = View.VISIBLE
     }
+
+
 }

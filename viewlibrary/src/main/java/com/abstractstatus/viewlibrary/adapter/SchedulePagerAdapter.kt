@@ -4,7 +4,8 @@ import android.content.Context
 import android.view.View
 import android.view.ViewGroup
 import androidx.viewpager.widget.PagerAdapter
-import com.abstractstatus.viewlibrary.view.ScheduleListView
+import com.abstractstatus.viewlibrary.util.MonthViewDelegate
+import com.abstractstatus.viewlibrary.view.ScheduleView
 
 /**
  ** Created by AbstractStatus at 2021/8/22 10:05.
@@ -15,11 +16,11 @@ class SchedulePagerAdapter(private val context: Context) : PagerAdapter() {
     }
 
     override fun getCount(): Int {
-        return 7
+        return MonthViewDelegate.daysAWeek
     }
 
     override fun instantiateItem(container: ViewGroup, position: Int): Any {
-        val view = ScheduleListView(context)
+        val view = ScheduleView(context)
         view.tag = position
         container.addView(view)
         return view

@@ -7,6 +7,17 @@
     tools:context=".MainActivity">
 
     <com.abstractstatus.viewlibrary.view.MonthItemView
+        android:id="@+id/month_item_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.abstractstatus.viewlibrary.AsScheduleMonthView
+        android:id="@+id/as_schedule_month_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_constraintBottom_toBottomOf="parent"

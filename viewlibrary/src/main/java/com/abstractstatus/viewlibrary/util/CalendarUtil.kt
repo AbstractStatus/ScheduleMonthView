@@ -11,6 +11,21 @@ object CalendarUtil {
     //默认月视图显示6 * 7天
     private const val DEFAULT_MONTH_VIEW_DAYS_NUM = 42
 
+    fun get42DaysDataByMonthPosition(pos: Int): Array<IntArray> {
+        val calendar = Calendar.getInstance()
+        val res = Array(DEFAULT_MONTH_VIEW_DAYS_NUM) { IntArray(5) }
+        val nowYearAndMonth = getNowYearAndMonth()
+        val yearAndMonth = getAddYearAndMonth(nowYearAndMonth[0], nowYearAndMonth[1], pos - MonthViewDelegate.startMonthPos)
+        calendar[yearAndMonth[0], yearAndMonth[1] - 1] = 1
+        val curMonthFirstDayOfWeek = calendar[Calendar.DAY_OF_WEEK]
+        calendar.add(Calendar.DATE, -curMonthFirstDayOfWeek)
+        for (i in 0 until DEFAULT_MONTH_VIEW_DAYS_NUM) {
+            calendar.add(Calendar.DATE, 1)
+            res[i] = getOneDayData(calendar, yearAndMonth[1])
+        }
+        return res
+    }
+
     //获取某日在月视图内的pos, 0~42
     fun getTodayPosition(dates: Array<IntArray>): Int {
         val curTimeInfo = getCurTimeIntArrInfo()
@@ -121,7 +136,7 @@ object CalendarUtil {
         calendar.add(Calendar.DATE, -curMonthFirstDayOfWeek)
         for (i in 0 until DEFAULT_MONTH_VIEW_DAYS_NUM) {
             calendar.add(Calendar.DATE, 1)
-            res[i] = getOneDayData(calendar)
+            res[i] = getOneDayData(calendar, curMonth + 1)
         }
         return res
     }

@@ -4,7 +4,10 @@ import android.content.Context
 import android.view.View
 import android.view.ViewGroup
 import androidx.viewpager.widget.PagerAdapter
-import com.abstractstatus.viewlibrary.view.ScheduleListView
+import com.abstractstatus.viewlibrary.util.CalendarUtil.getAddYearAndMonth
+import com.abstractstatus.viewlibrary.util.CalendarUtil.getNowYearAndMonth
+import com.abstractstatus.viewlibrary.util.MonthViewDelegate
+import com.abstractstatus.viewlibrary.view.MonthItemView
 
 
 /**
@@ -16,9 +19,21 @@ class MonthPagerAdapter(private val context: Context) : PagerAdapter() {
     }
 
     override fun getCount(): Int {
-        return 3000
+        return MonthViewDelegate.maxYearCount
     }
 
+    override fun instantiateItem(container: ViewGroup, position: Int): Any {
+        val view = MonthItemView(context)
 
+        view.monthPosition = position
+        view.tag = position
+
+        container.addView(view)
+        return view
+    }
+
+    override fun destroyItem(container: ViewGroup, position: Int, `object`: Any) {
+        container.removeView(`object` as View)
+    }
 
 }
